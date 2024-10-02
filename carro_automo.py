@@ -12,6 +12,11 @@ from keras.layers import Dense, GlobalAveragePooling2D
 from keras.optimizers import Adam
 from keras.models import Model
 
+import tensorflow as tf
+import keras.backend.tensorflow_backend as backend
+from threading import Threading
+
+
 # Try block to safely add CARLA's Python API to the system path.
 try:
     # 'sys.path.append()' adds a new path to Python's list of module search paths.
@@ -196,14 +201,13 @@ class DQNAgent:
 
         self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/{MODEL_NAME}-{int(time.time())}")
         self.target_update_counter = 0
-        self.graph = tf.get_default_graph()
 
         self.terminate = False
         self_last_logged_episode = 0
         self.training_initialized = False
     
     def create_model(self):
-        base_model = Xception(weights=None, include_top=False, input_shape(IMG_HEIGHT, IMG_WIDTH, 3))
+        base_model = Xception(weights=None, include_top=False, input_shape=(IM_HEIGHT, IM_WIDTH, 3))
 
         x = base_model.output
         x = GlobalAveragePooling2D()(x)
@@ -265,7 +269,7 @@ class DQNAgent:
         return self.model.predict(np.array(state).reshape(-1*state.shape)/255)[0]
 
     def train_in_loop(self):
-        X = np.random.uniform(size= (1, IMG_HEIGHT, IM_WIDTH, 3)).astype(np.float32)
+        X = np.random.uniform(size= (1, IM_HEIGHT, IM_WIDTH, 3)).astype(np.float32)
         y = np.random.uniform(size=(1,3)).astype(np.float32)
         with self.graph.as_default():
             self.model.fit(X,y, verbose=False, btch_size=1)
@@ -280,16 +284,11 @@ class DQNAgent:
 
 # MAIN LOOP TO TEST THE ENVIRONMENT
 if __name__ == "__main__":
-    env = CarEnv()
-    print("Resetting environment for the first episode...")
-    state = env.reset()
+    FPS = 60
+    ep_rewards = [-200]
 
-    for step_num in range(100):  # Simulate 100 steps, for example
-        action = random.choice([0, 1, 2])  # Choose a random action: left, straight, right
-        state, reward, done, _ = env.step(action)
-        print(f"Step {step_num + 1}, Reward: {reward}")
+    random.seed(1)
+    np.random.seed(1)
+    tf.set_random_seed(1)
 
-        if done:
-            print("Episode finished")
-            print("Resetting environment for the next episode...")
-            state = env.reset()  # Reset the environment for the next episode
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = MEMORY_FRACTION)
