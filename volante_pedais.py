@@ -2,53 +2,88 @@ import pygame
 import carla
 import time
 
-# Initialize Pygame and Joystick
-pygame.init()
-joystick = pygame.joystick.Joystick(0)
-joystick.init()
+# Dead zone threshold: any input value smaller than this is treated as zero
+DEAD_ZONE = 0.01  # Adjust this value if needed
 
-# Connect to CARLA
-client = carla.Client('localhost', 2000)
-client.set_timeout(10.0)
-world = client.get_world()
-blueprint_library = world.get_blueprint_library()
-vehicle_bp = blueprint_library.filter('vehicle.tesla.model3')[0]
+class CarlaRacingWheelControl:
+    def __init__(self):
+        # Initialize Pygame and Joystick
+        pygame.init()
+        self.joystick = pygame.joystick.Joystick(0)
+        self.joystick.init()
 
-# Spawn vehicle
-spawn_point = world.get_map().get_spawn_points()[0]
-vehicle = world.spawn_actor(vehicle_bp, spawn_point)
-control = carla.VehicleControl()
+        # Connect to CARLA
+        self.client = carla.Client('localhost', 2000)
+        self.client.set_timeout(10.0)
+        self.world = self.client.get_world()
+        self.blueprint_library = self.world.get_blueprint_library()
+        self.vehicle_bp = self.blueprint_library.filter('vehicle.tesla.model3')[0]
 
-# Function to normalize the throttle and brake inputs (if needed)
-def normalize_pedal_value(value):
-    # If your pedals go from 1.0 (unpressed) to 0.0 (fully pressed), this will invert the value.
-    return max(0.0, min(1.0, 1.0 - value))
+        # Spawn vehicle
+        spawn_point = self.world.get_map().get_spawn_points()[0]
+        self.vehicle = self.world.spawn_actor(self.vehicle_bp, spawn_point)
+        self.control = carla.VehicleControl()
 
-try:
-    while True:
-        pygame.event.pump()  # Process event queue
+        # Print joystick details for debugging
+        print(f"Joystick Name: {self.joystick.get_name()}")
+        print(f"Number of Axes: {self.joystick.get_numaxes()}")
 
-        # Get joystick input
-        steering = joystick.get_axis(0)  # Axis 0: Steering [-1, 1]
-        throttle = joystick.get_axis(1)  # Axis 1: Throttle [0, 1] (may need normalization)
-        brake = joystick.get_axis(2)     # Axis 2: Brake [0, 1] (may need normalization)
-        gear = joystick.get_axis(3)      # Axis 3: Gear (if you want to use it)
+    def apply_dead_zone(self, value, threshold=DEAD_ZONE):
+        if abs(value) < threshold:
+            return 0.0
+        return value
 
-        # Optionally normalize throttle and brake if values are inverted
-        throttle = normalize_pedal_value(throttle)  # Normalize if inverted
-        brake = normalize_pedal_value(brake)        # Normalize if inverted
+    def _parse_vehicle_keys(self, keys, milliseconds):
+        pygame.event.pump()  # Update pygame events
 
-        # Set CARLA vehicle controls
-        control.steer = steering
-        control.throttle = throttle
-        control.brake = brake
+        # Axis 0: Steering
+        steering = self.joystick.get_axis(0)  # Steering [-1, 1]
+        steering = self.apply_dead_zone(steering)
 
-        # Apply vehicle control in CARLA
-        vehicle.apply_control(control)
+        # Axis 1: Throttle
+        throttle = self.joystick.get_axis(1)  # Throttle [0, -1] (inverted axis, adjust if necessary)
+        throttle = self.apply_dead_zone(-throttle)  # Invert axis if needed (positive when pressed)
 
-        # Limit loop to 60 FPS
-        time.sleep(1/60)
+        # Axis 2: Brake
+        brake = self.joystick.get_axis(2)  # Brake [0, 1]
+        brake = self.apply_dead_zone(brake)
 
-finally:
-    vehicle.destroy()
-    pygame.quit()
+        # Debugging: Print the joystick input values
+        print(f"Steering: {steering}, Throttle: {throttle}, Brake: {brake}")
+
+        # Apply to CARLA vehicle control
+        self.control.throttle = throttle
+        self.control.brake = brake
+
+        # Steering handling
+        self.control.steer = round(steering, 1)
+        self.control.hand_brake = keys[pygame.K_SPACE]  # Space key for handbrake
+
+        # Debugging: Print vehicle control values
+        print(f"Vehicle Control: Throttle: {self.control.throttle}, Brake: {self.control.brake}, Steer: {self.control.steer}")
+
+    def run(self):
+        try:
+            while True:
+                # Capture key events (or joystick events, if you have any button mappings)
+                keys = pygame.key.get_pressed()
+
+                # Calculate milliseconds elapsed since last frame
+                milliseconds = 1/60 * 1000  # Assuming 60 FPS for this example
+
+                # Parse joystick inputs for vehicle control
+                self._parse_vehicle_keys(keys, milliseconds)
+
+                # Apply vehicle control in CARLA
+                self.vehicle.apply_control(self.control)
+
+                # Limit loop to 60 FPS
+                time.sleep(1/60)
+
+        finally:
+            self.vehicle.destroy()
+            pygame.quit()
+
+if __name__ == "__main__":
+    racing_wheel_control = CarlaRacingWheelControl()
+    racing_wheel_control.run()
