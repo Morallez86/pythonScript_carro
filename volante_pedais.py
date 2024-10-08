@@ -2,6 +2,7 @@ import pygame
 import carla
 import time
 import numpy as np  # Make sure to import numpy
+import gerar_trafico as gf
 
 # Dead zone threshold: any input value smaller than this is treated as zero
 DEAD_ZONE = 0.01  # Adjust this value if needed
@@ -32,8 +33,18 @@ class CarlaRacingWheelControl:
         self.vehicle_bp = self.blueprint_library.filter('vehicle.tesla.model3')[0]
 
         # Spawn vehicle
-        spawn_point = self.world.get_map().get_spawn_points()[0]
-        self.vehicle = self.world.spawn_actor(self.vehicle_bp, spawn_point)
+        spawn_points = self.world.get_map().get_spawn_points()
+        self.vehicle = None
+        for spawn_point in spawn_points:
+            try:
+                self.vehicle = self.world.spawn_actor(self.vehicle_bp, spawn_point)
+                break
+            except RuntimeError as e:
+                print(f"Failed to spawn at {spawn_point.location}, retrying...")
+
+        if not self.vehicle:
+            raise RuntimeError("Failed to spawn the vehicle due to collision or invalid points.")
+
         self.control = carla.VehicleControl()
 
         # Attach a camera to the vehicle
@@ -49,6 +60,9 @@ class CarlaRacingWheelControl:
 
         # State variable to track whether the vehicle is in reverse
         self.is_reverse = False
+
+        self.vehicles_list, self.walkers_list, self.all_id = gf.spawn_traffic(self.client, self.world)
+
 
         # Print joystick details for debugging
         print(f"Joystick Name: {self.joystick.get_name()}")
@@ -154,11 +168,14 @@ class CarlaRacingWheelControl:
                 # Render the camera feed in the Pygame window
                 self.render_camera_feed()
 
+                self.world.tick()
+
                 # Limit loop to 60 FPS
                 time.sleep(1/60)
 
         finally:
             # Clean up on exit
+            gf.destroy_traffic(self.client, self.vehicles_list, self.all_id)
             self.vehicle.destroy()
             self.camera.destroy()
             pygame.quit()
