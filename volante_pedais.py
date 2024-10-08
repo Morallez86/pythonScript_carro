@@ -61,12 +61,10 @@ class CarlaRacingWheelControl:
         # State variable to track whether the vehicle is in reverse
         self.is_reverse = False
 
+         # Initialize time of the last reverse toggle
+        self.last_toggle_time = 0  # Store the last time reverse was toggled
+
         self.vehicles_list, self.walkers_list, self.all_id = gf.spawn_traffic(self.client, self.world)
-
-
-        # Print joystick details for debugging
-        print(f"Joystick Name: {self.joystick.get_name()}")
-        print(f"Number of Axes: {self.joystick.get_numaxes()}")
 
     def apply_dead_zone(self, value, threshold=DEAD_ZONE):
         if abs(value) < threshold:
@@ -114,13 +112,12 @@ class CarlaRacingWheelControl:
         else:
             brake = 1.0 - brake  # Invert brake axis
 
-        # Toggle reverse mode on button press
-        if reverse_axis < -DEAD_ZONE:  # If the reverse button is pressed
-            self.is_reverse = not self.is_reverse  # Toggle the reverse state
-            time.sleep(1)  # Small delay to prevent multiple toggles
-
-        # Debugging: Print the joystick input values
-        print(f"Steering: {steering}, Throttle: {throttle}, Brake: {brake}, Is Reverse: {self.is_reverse}")
+        # Time-based debouncing for reverse gear
+        current_time = time.time()  # Get the current time in seconds
+        if reverse_axis < -DEAD_ZONE and current_time - self.last_toggle_time > 0.5:
+            # Toggle reverse mode and update last toggle time
+            self.is_reverse = not self.is_reverse
+            self.last_toggle_time = current_time  # Update the last toggle time
 
         # Apply to CARLA vehicle control
         self.control.throttle = throttle
@@ -142,9 +139,6 @@ class CarlaRacingWheelControl:
         # Steering handling
         self.control.steer = round(steering, 1)
         self.control.hand_brake = keys[pygame.K_SPACE]  # Space key for handbrake
-
-        # Debugging: Print vehicle control values
-        print(f"Vehicle Control: Throttle: {self.control.throttle}, Brake: {self.control.brake}, Steer: {self.control.steer}, Gear: {self.control.gear}")
 
     def run(self):
         try:
